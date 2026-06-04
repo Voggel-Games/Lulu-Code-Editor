@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+	 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Lulu Code Editor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        :root { --bg: #1e1e1e; --sidebar: #252526; --accent: #007acc; }
+        
+        /* Absoluter Scroll-Stopp für das Hauptfenster */
+        html, body { 
+            margin: 0; padding: 0; width: 100vw; height: 100vh; 
+            overflow: hidden; font-family: 'Segoe UI', sans-serif; 
+            background: var(--bg); color: white;
+        }
+
+        body { display: flex; position: fixed; }
+
+        /* Sidebar */
+        #sidebar { width: 220px; min-width: 220px; background: var(--sidebar); border-right: 1px solid #333; display: flex; flex-direction: column; align-items: center; padding-top: 20px; }
+        
+        /* Logo Styling */
+        .logo-container { 
+            width: 100px; 
+            height: 100px; 
+            background: #333; 
+            border-radius: 20px; 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            margin-bottom: 20px; 
+            overflow: hidden; /* Sorgt dafür, dass das Bild innerhalb der Rundung bleibt */
+            border: 1px solid #444;
+        }
+        .logo-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* Bild füllt den Container aus, ohne zu verzerren */
+        }
+
+        .pdf-link { margin-top: auto; margin-bottom: 20px; padding: 10px; color: #4fc1ff; text-decoration: none; font-size: 13px; border: 1px solid #444; width: 80%; text-align: center; border-radius: 5px; }
+
+        /* Main Content */
+        #main { width: calc(100vw - 220px); display: flex; flex-direction: column; height: 100vh; }
+        #header-title { padding: 10px 20px; background: #2d2d2d; font-weight: bold; font-size: 20px; color: var(--accent); border-bottom: 1px solid #111; }
+        #toolbar { padding: 10px 20px; background: #333; display: flex; align-items: center; gap: 15px; border-bottom: 1px solid #111; }
+        
+        .icon-btn { background: none; border: none; color: white; font-size: 18px; cursor: pointer; padding: 5px 10px; border-radius: 4px; }
+        .icon-btn:hover { background: #444; color: var(--accent); }
+
+        /* Editor-Container */
+        #editor-container {
+            display: flex; flex-grow: 1; overflow: hidden; position: relative; background: var(--bg); width: 100%;
+        }
+
+        #line-numbers { 
+            width: 45px; background: var(--sidebar); color: #858585; 
+            text-align: right; padding: 25px 10px 100px 0; font-family: 'Consolas', monospace; 
+            font-size: 18px; line-height: 1.5; user-select: none; border-right: 1px solid #333;
+            overflow: hidden;
+        }
+
+        #editor { 
+            flex-grow: 1; background: transparent; color: #d4d4d4; border: none; 
+            padding: 25px 15px; font-family: 'Consolas', monospace; font-size: 18px; 
+            outline: none; resize: none; line-height: 1.5; 
+            white-space: pre-wrap; 
+            word-wrap: break-word;
+            overflow-x: hidden; 
+            overflow-y: auto;
+            z-index: 2;
+        }
+
+        #active-line-highlight {
+            position: absolute; left: 45px; right: 0; height: 27px; 
+            border-top: 1px solid rgba(255, 255, 255, 0.15);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+            background: rgba(255, 255, 255, 0.03);
+            pointer-events: none; z-index: 1;
+        }
+
+        /* Vorschau */
+        #preview-overlay { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.85); display: none; z-index: 100; justify-content: center; align-items: center; }
+        #preview-window { width: 85%; height: 75%; background: white; border: 6px solid var(--accent); border-radius: 4px; display: flex; flex-direction: column; overflow: hidden; }
+        #preview-header { padding: 10px 15px; background: #eee; display: flex; justify-content: space-between; align-items: center; color: #333; font-weight: bold; }
+
+/* Verhindert Textmarkierungen im gesamten Interface (außer im Editor!) */
+html, body, #sidebar, #toolbar, #header-title {
+    -webkit-user-select: none; /* Safari */
+    -ms-user-select: none;     /* IE 10+ */
+    user-select: none;         /* Standard */
+    -webkit-touch-callout: none; /* Verhindert Kontextmenü auf Mobile (iOS) */
+}
+
+/* Der Editor muss natürlich beschreibbar bleiben */
+#editor {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
+/* Verhindert das Herunterladen/Ziehen von Bildern */
+img {
+    pointer-events: none;
+    -webkit-user-drag: none;
+}
+
+html, body {
+    /* Verhindert Standard-Touch-Aktionen wie Zoomen durch Doppeltippen */
+    touch-action: pan-x pan-y; 
+    /* Deaktiviert den blauen Auswahlrahmen bei Klicks auf Mobile */
+    -webkit-tap-highlight-color: transparent;
+}
+
+.minimal-hint {
+    font-size: 11px;
+    font-weight: 400; /* Dünnere Schrift */
+    color: var(--accent); /* Dein Blau */
+    font-family: 'Segoe UI', sans-serif;
+    letter-spacing: 0.5px;
+    text-transform: lowercase; /* Alles kleingeschrieben */
+    opacity: 0.9;
+    padding-right: 5px;
+    /* Die Striche in weißgrau über ein Pseudo-Element oder direkt im Text */
+    color: #888; /* Farbe der Striche */
+}
+
+/* Damit nur der Text blau ist, die Striche aber grau bleiben */
+.minimal-hint {
+    color: #888; /* Farbe für die Striche --- */
+}
+
+.minimal-hint span {
+    color: var(--accent); /* Farbe für den Text dazwischen */
+    margin: 0 5px;
+}
+
+.icon-btn-header {
+    background: #333;
+    border: 1px solid #444;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.icon-btn-header:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+    </style>
+</head>
+<body>
+
+<style>
+    /* Styling für die Dateiliste */
+    #file-browser {
+        width: 90%;
+        margin-top: 10px;
+        border-top: 1px solid #333;
+        padding-top: 10px;
+        overflow-y: auto;
+        flex-grow: 1;
+    }
+    .file-header {
+        font-size: 12px;
+        text-transform: uppercase;
+        color: #858585;
+        margin-bottom: 8px;
+        padding-left: 5px;
+    }
+    .file-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 4px 8px;
+        font-size: 13px;
+        color: #cccccc;
+        cursor: default;
+        border-radius: 3px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .file-item:hover {
+        background: #2a2d2e;
+    }
+    .file-item i { width: 16px; text-align: center; }
+    .icon-folder { color: #dcb67a; }
+    .icon-html { color: #e34c26; }
+    .icon-image { color: #b267e6; }
+    .icon-media { color: #4fc1ff; }
+
+    .file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    font-size: 13px;
+    color: #cccccc;
+    cursor: pointer;
+    border-radius: 3px;
+    transition: background 0.2s;
+}
+
+.file-item:hover { background: #2a2d2e; }
+
+/* Einrückung für Unterordner-Inhalte */
+.folder-content {
+    margin-left: 15px;
+    border-left: 1px solid #444; /* Der dünne graue Strich */
+    display: none; /* Standardmäßig geschlossen */
+}
+
+/* Wenn der Ordner offen ist */
+.folder-content.open {
+    display: block;
+}
+
+.arrow {
+    font-size: 10px;
+    transition: transform 0.2s;
+    width: 10px;
+}
+
+.arrow.open {
+    transform: rotate(90deg); /* Pfeil dreht sich nach unten */
+}
+
+.ascii-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: 'Consolas', 'Courier New', monospace; /* Wichtig für exakte Striche */
+    line-height: 1;
+    user-select: none;
+}
+
+.border-line {
+    color: #888; /* Weißgraue Striche oben/unten */
+    font-size: 10px;
+    letter-spacing: -1px; /* Zieht die Bindestriche zu einer Linie zusammen */
+}
+
+.side-border {
+    color: #888; /* Die seitlichen Striche | */
+    font-size: 11px;
+    padding: 2px 0;
+}
+
+.side-border span {
+    color: var(--accent); /* Nur der Text ist blau */
+    font-weight: 400;
+    text-transform: lowercase;
+    padding: 0 5px;
+}
+</style>
+
+<div id="sidebar">
+    <div class="logo-container">
+        <img src="Logo.PNG" alt="Lulu Logo">
+    </div>
+
+    <div id="file-browser">
+        <div class="file-header">Ordnerinhalte</div>
+        <div id="file-list">
+            <div style="padding: 10px; font-size: 11px; color: #666;">Kein Ordner ausgewählt</div>
+        </div>
+    </div>
+    
+    <a href="Lulu Code hilfe.pdf" target="_blank" class="pdf-link">
+        <i class="fas fa-file-pdf"></i> Erste Schritte (Kommt bald!)
+    </a>
+</div>
+
+
+<div id="main">
+   <div id="header-title" style="display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; background: #2d2d2d; border-bottom: 1px solid #111;">
+    
+    <div style="display: flex; align-items: center; gap: 15px;">
+        <span style="font-weight: bold; font-size: 20px; color: var(--accent);">Lulu Code Editor</span>
+        
+        <div style="display: flex; gap: 8px;">
+            <button class="icon-btn-header" onclick="openProjectFolder()" title="Projekt-Ordner öffnen">
+                <i class="fas fa-folder-plus"></i>
+            </button>
+            <button class="icon-btn-header" onclick="saveAsVscodeStyle()" title="Speichern unter...">
+                <i class="fas fa-save"></i>
+            </button>
+        </div>
+    </div>
+
+    <div class="ascii-box">
+        <div class="border-line">------------------------------------------------------------------------------</div>
+        <div class="side-border">| <span>tipp: bilder & sounds direkt in den hauptordner legen</span>|</div>
+        <div class="border-line">------------------------------------------------------------------------------</div>
+    </div>
+</div>
+    <div id="toolbar">
+        <button class="icon-btn" onclick="undoSentence()"><i class="fas fa-arrow-left"></i></button>
+        <button class="icon-btn" onclick="redoSentence()"><i class="fas fa-arrow-right"></i></button>
+        <button class="icon-btn" onclick="clearAll()"><i class="fas fa-trash"></i></button>
+        <div style="flex-grow: 1;"></div>
+        <button class="icon-btn" onclick="togglePreview()"><i class="fas fa-eye"></i></button>
+    </div>
+    
+    <div id="editor-container">
+        <div id="active-line-highlight"></div>
+        <div id="line-numbers">1</div>
+        <textarea id="editor" spellcheck="false" oninput="onEditorInput()" onscroll="syncScroll()" onclick="updateLineHighlight()" onkeyup="updateLineHighlight()"></textarea>
+    </div>
+
+<style>
+/* Das durchsichtige, dunkle Gelb für die Fundstellen */
+.search-highlight {
+    background-color: rgba(255, 215, 0, 0.4); 
+    border-bottom: 2px solid #ffd700;
+    border-radius: 2px;
+    color: inherit;
+}
+</style>
+
+
+    <div id="preview-overlay">
+        <div id="preview-window">
+            <div id="preview-header">
+                <span>VORSCHAU</span>
+                <button onclick="togglePreview()" style="border:none; background:#cc3333; color:white; padding:5px 12px; cursor:pointer;">X</button>
+            </div>
+            <iframe id="preview-frame" style="flex-grow:1; border:none; background:white;"></iframe>
+        </div>
+    </div>
+</div>
+
+<script>
+    const editor = document.getElementById('editor');
+    const lineNumbers = document.getElementById('line-numbers');
+    const highlighter = document.getElementById('active-line-highlight');
+    
+    let history = [""]; 
+    let historyStep = 0;
+    let typingTimer;
+
+    function onEditorInput() {
+        const lines = editor.value.split('\n');
+        lineNumbers.innerHTML = lines.map((_, i) => i + 1).join('<br>');
+        updateLineHighlight();
+        clearTimeout(typingTimer);
+        typingTimer = setTimeout(() => {
+            if (editor.value !== history[historyStep]) saveState();
+        }, 300);
+    }
+
+    function syncScroll() {
+        lineNumbers.scrollTop = editor.scrollTop;
+        updateLineHighlight();
+    }
+
+    function updateLineHighlight() {
+        const lineHeight = 27; 
+        const padding = 25; 
+        const textBeforeCursor = editor.value.substring(0, editor.selectionStart);
+        const lineIndex = textBeforeCursor.split('\n').length - 1;
+        const topPos = (lineIndex * lineHeight + padding - editor.scrollTop);
+        highlighter.style.top = topPos + "px";
+        highlighter.style.opacity = (topPos < 0 || topPos > editor.offsetHeight - 40) ? "0" : "1";
+    }
+
+    function saveState() {
+        if (historyStep < history.length - 1) history = history.slice(0, historyStep + 1);
+        history.push(editor.value);
+        historyStep++;
+    }
+
+    function undoSentence() {
+        if (editor.value !== history[historyStep]) saveState();
+        if (historyStep > 0) {
+            historyStep--;
+            editor.value = history[historyStep];
+            onEditorInput();
+        }
+    }
+
+    function redoSentence() {
+        if (historyStep < history.length - 1) {
+            historyStep++;
+            editor.value = history[historyStep];
+            onEditorInput();
+        }
+    }
+
+    function clearAll() {
+        if(confirm("Alles löschen?")) {
+            editor.value = "";
+            saveState();
+            onEditorInput();
+        }
+    }
+
+    function togglePreview() {
+        const overlay = document.getElementById('preview-overlay');
+        if (overlay.style.display === 'flex') {
+            overlay.style.display = 'none';
+        } else {
+            const frame = document.getElementById('preview-frame').contentWindow.document;
+            frame.open();
+            frame.write(`<html><body style="margin:20px; font-family:sans-serif; word-wrap: break-word;">${editor.value}</body></html>`);
+            frame.close();
+            overlay.style.display = 'flex';
+        }
+    }
+
+    onEditorInput();
+
+async function saveAsVscodeStyle() {
+    const content = editor.value;
+
+    // Prüfen, ob der Browser das moderne Fenster unterstützt (Chrome, Edge, Opera)
+    if ('showSaveFilePicker' in window) {
+        try {
+            // Das hier erzwingt das "Speichern unter" Fenster des Betriebssystems!
+            const handle = await window.showSaveFilePicker({
+                suggestedName: 'index.html',
+                types: [{
+                    description: 'HTML Webseite',
+                    accept: {'text/html': ['.html']},
+                }],
+            });
+            
+            const writable = await handle.createWritable();
+            await writable.write(content);
+            await writable.close();
+            
+            alert("Projekt erfolgreich gespeichert!");
+        } catch (err) {
+            // Nutzer hat das Fenster einfach geschlossen
+            console.log("Speichervorgang abgebrochen.");
+        }
+    } else {
+        // FALLBACK: Für Safari/Firefox, die das Fenster noch blockieren
+        const blob = new Blob([content], { type: 'text/html' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'index.html';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        alert("Hinweis: Dein Browser unterstützt den direkten Dateizugriff nicht. Die Datei wurde in deinen Download-Ordner geladen.");
+    }
+}
+
+let projectFolderHandle = null;
+
+async function openProjectFolder() {
+    try {
+        projectFolderHandle = await window.showDirectoryPicker();
+        const fileListContainer = document.getElementById('file-list');
+        fileListContainer.innerHTML = ''; 
+        
+        // Starte das Einlesen im Hauptverzeichnis
+        await renderFolder(projectFolderHandle, fileListContainer);
+        
+        alert("Projekt-Struktur geladen!");
+    } catch (err) {
+        console.log("Zugriff verweigert.");
+    }
+}
+
+// Diese Funktion baut den Baum (auch für Unterordner)
+async function renderFolder(directoryHandle, container) {
+    for await (const entry of directoryHandle.values()) {
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        
+        const isDirectory = entry.kind === 'directory';
+        let iconClass = isDirectory ? 'fas fa-folder icon-folder' : 'far fa-file';
+        const name = entry.name.toLowerCase();
+
+        // Icon-Logik
+        if (!isDirectory) {
+            if (name.endsWith('.html')) iconClass = 'fab fa-html5 icon-html';
+            else if (name.match(/\.(png|jpg|jpeg|gif|webp)$/)) iconClass = 'fas fa-image icon-image';
+            else if (name.match(/\.(mp3|wav|ogg|mp4|webm)$/)) iconClass = 'fas fa-play-circle icon-media';
+        }
+
+        // HTML für das Item (Pfeil nur bei Ordnern)
+        item.innerHTML = `
+            ${isDirectory ? '<i class="fas fa-chevron-right arrow"></i>' : '<span style="width:10px"></span>'}
+            <i class="${iconClass}"></i>
+            <span>${entry.name}</span>
+        `;
+
+        container.appendChild(item);
+
+        if (isDirectory) {
+            // Container für den Inhalt des Unterordners erstellen
+            const subContainer = document.createElement('div');
+            subContainer.className = 'folder-content';
+            container.appendChild(subContainer);
+
+            // Klick auf Ordner: Auf/Zuklappen
+            item.onclick = async (e) => {
+                e.stopPropagation();
+                const arrow = item.querySelector('.arrow');
+                const isOpen = subContainer.classList.toggle('open');
+                arrow.classList.toggle('open');
+                
+                // Nur einlesen, wenn er noch leer ist (Performance)
+                if (isOpen && subContainer.innerHTML === '') {
+                    await renderFolder(entry, subContainer);
+                }
+            };
+        } else {
+            // Klick auf Datei: Öffnen
+            item.onclick = (e) => {
+                e.stopPropagation();
+                handleFileClick(entry);
+            };
+        }
+    }
+}
+
+async function handleFileClick(handle) {
+    const file = await handle.getFile();
+    const name = handle.name.toLowerCase();
+
+    if (name.endsWith('.html')) {
+        const content = await file.text();
+        editor.value = content;
+        onEditorInput();
+        saveState();
+    } else if (name.match(/\.(png|jpg|jpeg|gif|webp)$/)) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            document.getElementById('viewer-img').src = e.target.result;
+            document.getElementById('image-viewer').style.display = 'flex';
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+// Diese Funktion verbessert deine togglePreview()
+async function togglePreview() {
+    const overlay = document.getElementById('preview-overlay');
+    if (overlay.style.display === 'flex') {
+        overlay.style.display = 'none';
+    } else {
+        let code = editor.value;
+
+        // Kleiner Trick: Wir injizieren eine Basis-URL oder ein Skript, 
+        // damit lokale Pfade funktionieren. 
+        // Da Browser echte lokale Pfade (C:/...) blockieren, 
+        // müssen wir die Bilder als Blobs einbetten, wenn du sie im Ordner hast.
+        
+        const frame = document.getElementById('preview-frame').contentWindow.document;
+        frame.open();
+        frame.write(`
+            <html>
+            <head>
+                <style>body { margin:20px; font-family:sans-serif; }</style>
+            </head>
+            <body>
+                ${code}
+                <script>
+                    // Hier könnte später Logik rein, die Bilder aus dem projectFolderHandle zieht
+                <\/script>
+            </body>
+            </html>
+        `);
+        frame.close();
+        overlay.style.display = 'flex';
+    }
+}
+
+// Variablen für die Suche
+const searchPanel = document.getElementById('search-panel');
+const searchInput = document.getElementById('search-input');
+const searchError = document.getElementById('search-error');
+
+function toggleSearch() {
+    if (searchPanel.style.display === 'none' || searchPanel.style.display === '') {
+        searchPanel.style.display = 'block';
+        searchInput.focus();
+    } else {
+        searchPanel.style.display = 'none';
+        searchInput.value = '';
+        onEditorInput(); // Markierungen entfernen beim Schließen
+    }
+}
+
+function executeSearch() {
+    const query = searchInput.value;
+    const text = editor.value;
+    
+    if (!query) {
+        searchError.style.display = 'none';
+        onEditorInput(); // Normales Highlighting zeigen
+        return;
+    }
+
+    // Erstellt eine Suche nach Wörtern, die mit dem Text BEGINNEN (\b)
+    const regex = new RegExp(`(\\b${query}[a-zA-Z0-9_-]*)`, 'gi');
+    const matches = text.match(regex);
+
+    if (!matches) {
+        searchError.style.display = 'block';
+    } else {
+        searchError.style.display = 'none';
+        
+        // Wir nutzen dein Highlighting-System, mischen aber die Suche unter
+        let highlighted = text
+            .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+            .replace(regex, '<span class="search-highlight">$1</span>');
+            
+        document.getElementById('highlight-layer').innerHTML = highlighted;
+    }
+}
+
+// 1. Rechtsklick komplett sperren
+document.addEventListener('contextmenu', event => event.preventDefault());
+
+// 2. Tastenkombinationen sperren (F12, Strg+U, Strg+Shift+I, etc.)
+document.onkeydown = function(e) {
+    // F12 sperren
+    if (e.keyCode == 123) return false;
+
+    // Strg+Shift+I (Konsole), Strg+Shift+J (Konsole), Strg+U (Quellcode)
+    if (e.ctrlKey && (e.shiftKey && (e.keyCode == 73 || e.keyCode == 74) || e.keyCode == 85)) {
+        return false;
+    }
+
+    // Mac-Äquivalent: Cmd+Opt+I / Cmd+U
+    if (e.metaKey && (e.altKey && e.keyCode == 73 || e.keyCode == 85)) {
+        return false;
+    }
+};
+
+// 3. Echter App-Modus: Vollbild beim ersten Klick
+// Browser erlauben Vollbild nur nach einer Nutzer-Interaktion
+document.addEventListener('click', function() {
+    if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+            console.log("Vollbild nicht möglich");
+        });
+    }
+}, { once: true }); // Führt es nur einmal beim ersten Klick aus
+
+// 1. Pinch-to-Zoom (Zwei-Finger-Geste) auf Mobile verhindern
+document.addEventListener('touchmove', function (event) {
+    if (event.scale !== 1) { 
+        event.preventDefault(); 
+    }
+}, { passive: false });
+
+// 2. Zoom per Mausrad + Strg-Taste am PC verhindern
+document.addEventListener('wheel', function (event) {
+    if (event.ctrlKey) {
+        event.preventDefault();
+    }
+}, { passive: false });
+
+// 3. Zoom per Tastenkombination (Strg + Plus/Minus) verhindern
+document.addEventListener('keydown', function (event) {
+    if (event.ctrlKey && (event.keyCode === 187 || event.keyCode === 189 || event.keyCode === 107 || event.keyCode === 109)) {
+        event.preventDefault();
+    }
+});
+
+// Blockiert alle Tastenkombinationen, die das "Webseiten-Gefühl" verraten
+document.addEventListener('keydown', function(e) {
+    // 1. Zoom-Sperre (Strg + Plus/Minus/Null)
+    if (e.ctrlKey && (e.keyCode === 187 || e.keyCode === 189 || e.keyCode === 107 || e.keyCode === 109 || e.keyCode === 48)) {
+        e.preventDefault();
+    }
+
+    // 2. Quellcode & Entwickler-Tools (Strg+U, F12, Strg+Shift+I, Strg+Shift+J, Strg+S)
+    // Wir blockieren auch Strg+S, damit der Browser-Speicherdialog nicht kommt (du hast ja eigenen Button)
+    if (
+        e.keyCode === 123 || // F12
+        (e.ctrlKey && e.keyCode === 85) || // Strg + U (Quelltext)
+        (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74)) || // Strg + Shift + I/J
+        (e.ctrlKey && e.keyCode === 83) || // Strg + S (Browser-Speichern)
+        (e.ctrlKey && e.keyCode === 80)    // Strg + P (Drucken)
+    ) {
+        e.preventDefault();
+        return false;
+    }
+
+    // 3. Mac-Äquivalente (Cmd/Meta-Taste statt Strg)
+    if (e.metaKey && (e.keyCode === 85 || e.altKey && e.keyCode === 73 || e.keyCode === 83)) {
+        e.preventDefault();
+        return false;
+    }
+}, false);
+
+// Zusätzlicher Schutz gegen das Ziehen von Elementen (z.B. Bilder aus dem Editor ziehen)
+document.addEventListener('dragstart', event => event.preventDefault());
+
+// Hilfsfunktion zum Schließen der Bildvorschau
+function closeImageViewer() {
+    document.getElementById('image-viewer').style.display = 'none';
+}
+
+async function openProjectFolder() {
+    try {
+        projectFolderHandle = await window.showDirectoryPicker();
+        const fileListContainer = document.getElementById('file-list');
+        fileListContainer.innerHTML = ''; 
+
+        for await (const entry of projectFolderHandle.values()) {
+            const item = document.createElement('div');
+            item.className = 'file-item';
+            item.style.cursor = 'pointer'; // Zeigt an, dass es anklickbar ist
+
+            let icon = 'far fa-file';
+            let iconClass = '';
+            const name = entry.name.toLowerCase();
+
+            if (entry.kind === 'directory') {
+                icon = 'fas fa-folder';
+                iconClass = 'icon-folder';
+            } else {
+                if (name.endsWith('.html')) { icon = 'fab fa-html5'; iconClass = 'icon-html'; }
+                else if (name.match(/\.(png|jpg|jpeg|gif|webp)$/)) { icon = 'fas fa-image'; iconClass = 'icon-image'; }
+                else if (name.match(/\.(mp3|wav|ogg|mp4|webm)$/)) { icon = 'fas fa-play-circle'; iconClass = 'icon-media'; }
+            }
+
+            item.innerHTML = `<i class="${icon} ${iconClass}"></i> ${entry.name}`;
+            
+            // Klick-Event für jede Datei hinzufügen
+            item.onclick = () => handleFileClick(entry);
+            
+            fileListContainer.appendChild(item);
+        }
+    } catch (err) {
+        console.log("Zugriff verweigert.");
+    }
+}
+
+async function handleFileClick(handle) {
+    if (handle.kind === 'directory') return; // Ordner ignorieren wir beim Klick vorerst
+
+    const file = await handle.getFile();
+    const name = handle.name.toLowerCase();
+
+    // 1. HTML DATEIEN: In den Editor laden
+    if (name.endsWith('.html')) {
+        const content = await file.text();
+        editor.value = content;
+        onEditorInput(); // Zeilennummern etc. aktualisieren
+        saveState();    // In die Historie für Rückgängig/Wiederholen aufnehmen
+    } 
+    // 2. BILDER: Im Overlay anzeigen
+    else if (name.match(/\.(png|jpg|jpeg|gif|webp)$/)) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            document.getElementById('viewer-img').src = e.target.result;
+            document.getElementById('image-viewer').style.display = 'flex';
+        };
+        reader.readAsDataURL(file);
+    }
+}
+
+async function handleFileClick(handle) {
+    try {
+        // 1. Berechtigung prüfen und explizit anfordern
+        // 'readwrite' ist oft stabiler als nur 'read', da der Browser merkt, dass du "Editor-Rechte" willst
+        const options = { mode: 'readwrite' }; 
+        
+        if (await handle.queryPermission(options) !== 'granted') {
+            const status = await handle.requestPermission(options);
+            if (status !== 'granted') {
+                alert("Ohne Erlaubnis kann ich die Datei leider nicht öffnen.");
+                return;
+            }
+        }
+
+        // 2. Die Datei frisch vom System holen
+        const file = await handle.getFile();
+        const name = handle.name.toLowerCase();
+
+        // 3. Datei-Typen verarbeiten
+        if (name.endsWith('.html') || name.endsWith('.css') || name.endsWith('.js') || name.endsWith('.txt')) {
+            const content = await file.text();
+            editor.value = content;
+            onEditorInput();
+            saveState();
+            editor.scrollTop = 0;
+            syncScroll();
+        } 
+        else if (name.match(/\.(png|jpg|jpeg|gif|webp)$/)) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const viewerImg = document.getElementById('viewer-img');
+                viewerImg.src = e.target.result;
+                document.getElementById('image-viewer').style.display = 'flex';
+            };
+            reader.readAsDataURL(file);
+        }
+    } catch (err) {
+        console.error("Detaillierter Fehler:", err);
+        alert("Zugriff verweigert. Tipp: Klicke einmal kurz in das Editor-Fenster und versuche es dann erneut.");
+    }
+}
+
+// Hier speichern wir alles lokal im Editor-Speicher
+let virtualFileSystem = {};
+
+async function openProjectFolder() {
+    try {
+        const rootHandle = await window.showDirectoryPicker();
+        virtualFileSystem = {}; // Speicher leeren
+        const fileListContainer = document.getElementById('file-list');
+        fileListContainer.innerHTML = '<div style="padding:10px; color:#aaa;">Lade Daten...</div>'; 
+
+        // Alles rekursiv einlesen
+        await scanDirectory(rootHandle, virtualFileSystem, "");
+        
+        // Die Sidebar aus dem lokalen Speicher aufbauen
+        renderVirtualSidebar();
+        
+        alert("Alle Dateien wurden erfolgreich in den Editor geladen! (Wenn du diese Seite verlässt werden deine Änderungen nicht automatisch gespeichert!).");
+    } catch (err) {
+        console.error(err);
+        alert("Ordner konnte nicht geladen werden. Tipp: Klicke irgentwo in den Editor und versuche es erneut.");
+    }
+}
+
+// Liest ALLES sofort ein (Bilder als Daten-URLs, Text als String)
+async function scanDirectory(handle, systemObj, path) {
+    for await (const entry of handle.values()) {
+        const fullPath = path + entry.name;
+
+        if (entry.kind === 'directory') {
+            systemObj[entry.name] = { type: 'directory', contents: {} };
+            await scanDirectory(entry, systemObj[entry.name].contents, fullPath + "/");
+        } else {
+            const file = await entry.getFile();
+            const name = entry.name.toLowerCase();
+            
+            if (name.endsWith('.html') || name.endsWith('.css') || name.endsWith('.js') || name.endsWith('.txt')) {
+                const text = await file.text();
+                systemObj[entry.name] = { type: 'file', content: text, fileType: 'text' };
+            } 
+            else if (name.match(/\.(png|jpg|jpeg|gif|webp)$/)) {
+                // Bilder werden als Base64-Daten gespeichert
+                const dataUrl = await new Promise(resolve => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve(e.target.result);
+                    reader.readAsDataURL(file);
+                });
+                systemObj[entry.name] = { type: 'file', content: dataUrl, fileType: 'image' };
+            }
+        }
+    }
+}
+
+function renderVirtualSidebar() {
+    const container = document.getElementById('file-list');
+    container.innerHTML = '';
+    buildSidebarUI(virtualFileSystem, container);
+}
+
+function buildSidebarUI(systemObj, container) {
+    for (const name in systemObj) {
+        const entry = systemObj[name];
+        const item = document.createElement('div');
+        item.className = 'file-item';
+        
+        const isDir = entry.type === 'directory';
+        let icon = isDir ? 'fas fa-folder icon-folder' : 'far fa-file';
+        
+        if (!isDir) {
+            if (name.endsWith('.html')) icon = 'fab fa-html5 icon-html';
+            else if (entry.fileType === 'image') icon = 'fas fa-image icon-image';
+        }
+
+        item.innerHTML = `
+            ${isDir ? '<i class="fas fa-chevron-right arrow"></i>' : '<span style="width:10px"></span>'}
+            <i class="${icon}"></i>
+            <span>${name}</span>
+        `;
+        
+        container.appendChild(item);
+
+        if (isDir) {
+            const subContainer = document.createElement('div');
+            subContainer.className = 'folder-content';
+            container.appendChild(subContainer);
+            
+            item.onclick = (e) => {
+                e.stopPropagation();
+                subContainer.classList.toggle('open');
+                item.querySelector('.arrow').classList.toggle('open');
+            };
+            buildSidebarUI(entry.contents, subContainer);
+        } else {
+            item.onclick = (e) => {
+                e.stopPropagation();
+                openVirtualFile(entry);
+            };
+        }
+    }
+}
+
+function openVirtualFile(fileObj) {
+    if (fileObj.fileType === 'text') {
+        editor.value = fileObj.content;
+        onEditorInput();
+        saveState();
+    } else if (fileObj.fileType === 'image') {
+        document.getElementById('viewer-img').src = fileObj.content;
+        document.getElementById('image-viewer').style.display = 'flex';
+    }
+}
+
+async function togglePreview() {
+    const overlay = document.getElementById('preview-overlay');
+    if (overlay.style.display === 'flex') {
+        overlay.style.display = 'none';
+    } else {
+        let code = editor.value;
+
+        // Wir erstellen eine virtuelle Basis für das Spiel
+        const blob = new Blob([code], { type: 'text/html' });
+        const blobUrl = URL.createObjectURL(blob);
+
+        const frame = document.getElementById('preview-frame');
+        
+        // WICHTIG: Wir laden den Code als echtes Blob-Objekt
+        // Das sorgt dafür, dass der Browser denkt, die Datei käme aus dem Internet
+        frame.src = blobUrl;
+        
+        overlay.style.display = 'flex';
+
+        // Wir müssen die URL danach wieder freigeben, um Speicher zu sparen
+        frame.onload = () => {
+            URL.revokeObjectURL(blobUrl);
+        };
+    }
+}
+
+// Funktion, um den Vollbildmodus zu aktivieren
+function forceFullscreen() {
+    const doc = document.documentElement;
+    if (doc.requestFullscreen) {
+        doc.requestFullscreen().catch(err => {
+            console.warn(`Vollbild-Fehler: ${err.message}`);
+        });
+    } else if (doc.webkitRequestFullscreen) { /* Safari */
+        doc.webkitRequestFullscreen();
+    } else if (doc.msRequestFullscreen) { /* IE11 */
+        doc.msRequestFullscreen();
+    }
+}
+
+// Event-Listener: Egal wo man hinklickt, der Vollbildmodus startet
+// "capture: true" sorgt dafür, dass der Klick registriert wird, bevor andere Elemente ihn stoppen
+document.addEventListener('click', function() {
+    if (!document.fullscreenElement) {
+        forceFullscreen();
+    }
+}, { capture: true });
+
+// Falls der Nutzer manuell das Vollbild verlässt (z.B. ESC-Taste), 
+// wird er beim nächsten Klick sofort wieder "reingezwungen".
+document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) {
+        console.log("Vollbild verlassen - Re-Aktivierung bei nächstem Klick bereit.");
+    }
+});
+
+function togglePreview() {
+    const overlay = document.getElementById('preview-overlay');
+    if (overlay.style.display === 'flex') {
+        overlay.style.display = 'none';
+    } else {
+        let code = editor.value;
+
+        // GEHEIMTRICK: Wir gehen alle Dateien durch, die du geladen hast
+        for (const fileName in virtualFileSystem) {
+            const fileData = virtualFileSystem[fileName];
+            
+            // Wenn es ein Bild ist, ersetzen wir den Namen im Code durch die echten Bilddaten
+            if (fileData.fileType === 'image') {
+                // Wir suchen nach dem Dateinamen (z.B. Logo.PNG) und ersetzen ihn 
+                // durch den langen "data:image..." String
+                const escapedName = fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(escapedName, 'g');
+                code = code.replace(regex, fileData.content);
+            }
+        }
+
+        const frame = document.getElementById('preview-frame').contentWindow.document;
+        frame.open();
+        frame.write(`
+            <html>
+            <head>
+                <style>
+                    body { margin:20px; font-family:sans-serif; background: white; color: black; }
+                    img { max-width: 100%; } /* Verhindert, dass Bilder den Rahmen sprengen */
+                </style>
+            </head>
+            <body>
+                ${code}
+            </body>
+            </html>
+        `);
+        frame.close();
+        overlay.style.display = 'flex';
+    }
+}
+
+function togglePreview() {
+    const overlay = document.getElementById('preview-overlay');
+    if (overlay.style.display === 'flex') {
+        overlay.style.display = 'none';
+    } else {
+        let code = editor.value;
+
+        // Bilder aus dem virtuellen Dateisystem ersetzen
+        for (const fileName in virtualFileSystem) {
+            const fileData = virtualFileSystem[fileName];
+            if (fileData.fileType === 'image') {
+                const escapedName = fileName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                const regex = new RegExp(escapedName, 'g');
+                code = code.replace(regex, fileData.content);
+            }
+        }
+
+        const frame = document.getElementById('preview-frame').contentWindow.document;
+        frame.open();
+        frame.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <style>
+                    /* RESET: Verhindert, dass Inhalte oben abgeschnitten werden oder Ränder nerven */
+                    html, body { 
+                        margin: 0; 
+                        padding: 15px; /* Ein kleiner Standard-Abstand, damit es nicht am Rand klebt */
+                        background: white; 
+                        color: black;
+                        min-height: 100%;
+                    }
+                    * { box-sizing: border-box; } /* Verhindert, dass Buttons durch Padding verschoben werden */
+                </style>
+            </head>
+            <body>
+                ${code}
+            </body>
+            </html>
+        `);
+        frame.close();
+        overlay.style.display = 'flex';
+    }
+}
+</script>
+<div id="image-viewer" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.9); z-index:2000; justify-content:center; align-items:center;">
+    <button onclick="closeImageViewer()" style="position:absolute; top:20px; right:20px; background:#cc3333; color:white; border:none; padding:10px 15px; cursor:pointer; font-weight:bold; border-radius:5px; z-index:2001;">X</button>
+    <img id="viewer-img" src="" style="max-width:90%; max-height:90%; border:3px solid #444; box-shadow: 0 0 30px rgba(0,0,0,0.5);">
+</div>
+</body>
+</html>
